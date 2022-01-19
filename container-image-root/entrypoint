@@ -1,0 +1,58 @@
+#!/bin/bash
+
+set -x
+
+create_haproxy_data_dir() {
+  mkdir -p /haproxy/log
+  chmod -R 0755 /haproxy
+
+  cp -f /tmp/haproxy/haproxy.cfg /haproxy/haproxy.cfg
+
+  ln -sf /haproxy /etc/haproxy
+  mkdir -p /var/lib/haproxy
+  touch /var/lib/haproxy/stats
+
+  # Create haproxy user/group
+  useradd -r haproxy
+  chown -R haproxy:haproxy /haproxy
+
+}
+
+setting_haproxy_rsyslog() {
+  if [ ! -e /etc/rsyslog.d/haproxy.conf ]; then
+    touch /etc/rsyslog.d/haproxy.conf
+    echo "# Collect log with UDP" >> /etc/rsyslog.d/haproxy.conf
+    echo "\$ModLoad imudp" >> /etc/rsyslog.d/haproxy.conf
+    echo "\$UDPServerAddress 127.0.0.1" >> /etc/rsyslog.d/haproxy.conf
+    echo "\$UDPServerRun 514" >> /etc/rsyslog.d/haproxy.conf
+    echo "# Creating separate log files based on the severity" >> /etc/rsyslog.d/haproxy.conf
+    echo "local0.* /haproxy/log/haproxy-traffic.log" >> /etc/rsyslog.d/haproxy.conf
+    echo "local0.notice /haproxy/log/haproxy-admin.log" >> /etc/rsyslog.d/haproxy.conf
+  echo "TEST"
+  cat /etc/rsyslog.d/haproxy.conf
+  echo "TEST"
+  fi
+  echo "local0.*   /haproxy/log/haproxy_0.log" | tee -a /etc/rsyslog.conf
+}
+
+# main.sh
+create_haproxy_data_dir
+setting_haproxy_rsyslog
+
+if [[ ${1:0:1} = '-' ]]; then
+  EXTRA_ARGS="$@"
+  set --
+elif [[ ${1} == '/usr/sbin/haproxy' ]]; then
+  EXTRA_ARGS="${@:2}"
+  set --
+fi
+
+if [[ -z ${1} ]]; then
+  echo "Start Rsyslog"
+  exec /usr/sbin/rsyslogd -n &
+  sleep 10
+  echo "Starting haproxy..."
+  exec /usr/sbin/haproxy -W -db -f /haproxy/haproxy.cfg -p /run/haproxy.pid
+else
+  exec "$@"
+fi
